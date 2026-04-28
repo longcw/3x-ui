@@ -234,6 +234,41 @@ setup_ip_certificate() {
     # Set reload command for auto-renewal (add || true so it doesn't fail during first install)
     local reloadCmd="systemctl restart x-ui 2>/dev/null || rc-service x-ui restart 2>/dev/null || true"
 
+    # Reuse existing cert if one is already on disk and valid for this IP — saves a
+    # Let's Encrypt rate-limit hit (5 identical-identifiers per 168h) on repeat installs.
+    # acme.sh's cron handles renewal when <6 days remain.
+    local certCrt="${certDir}/fullchain.pem"
+    local certKey="${certDir}/privkey.pem"
+    if [[ -f "${certCrt}" && -f "${certKey}" ]] \
+        && openssl x509 -checkend 0 -noout -in "${certCrt}" >/dev/null 2>&1 \
+        && ~/.acme.sh/acme.sh --list 2>/dev/null | awk '{print $1}' | grep -Fxq "${ipv4}"; then
+        echo -e "${green}Existing IP certificate found for ${ipv4}, reusing it.${plain}"
+        echo -e "${yellow}Skipping --issue. acme.sh cron will renew automatically when <6 days remain.${plain}"
+
+        # Re-register the reload command so future renewals restart x-ui
+        ~/.acme.sh/acme.sh --installcert -d ${ipv4} \
+            --key-file "${certKey}" \
+            --fullchain-file "${certCrt}" \
+            --reloadcmd "${reloadCmd}" >/dev/null 2>&1 || true
+
+        chmod 600 "${certKey}" 2>/dev/null
+        chmod 644 "${certCrt}" 2>/dev/null
+
+        echo -e "${green}Setting certificate paths for the panel...${plain}"
+        ${xui_folder}/x-ui cert -webCert "${certCrt}" -webCertKey "${certKey}"
+        if [ $? -ne 0 ]; then
+            echo -e "${yellow}Warning: Could not set certificate paths automatically${plain}"
+            echo -e "${yellow}Certificate files are at:${plain}"
+            echo -e "  Cert: ${certCrt}"
+            echo -e "  Key:  ${certKey}"
+        else
+            echo -e "${green}Certificate paths configured successfully${plain}"
+        fi
+
+        echo -e "${green}IP certificate (reused) configured successfully!${plain}"
+        return 0
+    fi
+
     # Choose port for HTTP-01 listener (default 80, prompt override)
     local WebPort=""
     read -rp "Port to use for ACME HTTP-01 listener (default 80): " WebPort
