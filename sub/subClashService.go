@@ -132,7 +132,7 @@ func (s *SubClashService) getProxies(inbound *model.Inbound, client model.Client
 	for _, ep := range externalProxies {
 		extPrxy := ep.(map[string]any)
 		workingInbound := *inbound
-		workingInbound.Listen = extPrxy["dest"].(string)
+		workingInbound.Listen = stripIPv6Brackets(extPrxy["dest"].(string))
 		workingInbound.Port = int(extPrxy["port"].(float64))
 		workingStream := cloneMap(stream)
 

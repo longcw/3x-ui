@@ -183,7 +183,7 @@ func (s *SubJsonService) getConfig(inbound *model.Inbound, client model.Client, 
 
 	for _, ep := range externalProxies {
 		extPrxy := ep.(map[string]any)
-		inbound.Listen = extPrxy["dest"].(string)
+		inbound.Listen = stripIPv6Brackets(extPrxy["dest"].(string))
 		inbound.Port = int(extPrxy["port"].(float64))
 		newStream := stream
 		switch extPrxy["forceTls"].(string) {

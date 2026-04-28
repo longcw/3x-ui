@@ -511,6 +511,16 @@ func (s *SubService) resolveInboundAddress(inbound *model.Inbound) string {
 	return inbound.Listen
 }
 
+// stripIPv6Brackets removes the surrounding `[`…`]` from an IPv6 host literal.
+// URI-style share links require bracketed v6 (RFC 3986), but JSON / YAML proxy
+// configs (clash YAML `server:`, xray JSON `address`) want the bare address.
+func stripIPv6Brackets(host string) string {
+	if len(host) >= 2 && host[0] == '[' && host[len(host)-1] == ']' {
+		return host[1 : len(host)-1]
+	}
+	return host
+}
+
 func findClientIndex(clients []model.Client, email string) int {
 	for i, client := range clients {
 		if client.Email == email {
