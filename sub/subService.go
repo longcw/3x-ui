@@ -874,17 +874,6 @@ func (s *SubService) buildVmessEndpointLinks(endpoints []subscriptionEndpoint, b
 	return links.String()
 }
 
-func buildLinkWithParams(link string, params map[string]string, fragment string) string {
-	parsedURL, _ := url.Parse(link)
-	q := parsedURL.Query()
-	for k, v := range params {
-		q.Add(k, v)
-	}
-	parsedURL.RawQuery = q.Encode()
-	parsedURL.Fragment = fragment
-	return parsedURL.String()
-}
-
 func buildLinkWithParamsAndSecurity(link string, params map[string]string, fragment, security string, omitTLSFields bool) string {
 	parsedURL, _ := url.Parse(link)
 	q := parsedURL.Query()
