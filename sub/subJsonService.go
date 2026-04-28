@@ -177,6 +177,7 @@ func (s *SubJsonService) getConfig(inbound *model.Inbound, client model.Client, 
 
 	delete(stream, "externalProxy")
 
+	usedRealityShortIDs := map[string]bool{}
 	for _, endpoint := range endpoints {
 		workingInbound := *inbound
 		workingInbound.Listen = endpoint.Address
@@ -193,6 +194,11 @@ func (s *SubJsonService) getConfig(inbound *model.Inbound, client model.Client, 
 				newStream["security"] = "none"
 				delete(newStream, "tlsSettings")
 			}
+		}
+		if len(endpoints) > 1 {
+			assignUniqueRealityShortID(newStream, usedRealityShortIDs)
+		} else {
+			stripRealityShortIDs(newStream)
 		}
 		streamSettings, _ := json.MarshalIndent(newStream, "", "  ")
 
@@ -285,6 +291,7 @@ func (s *SubJsonService) realityData(rData map[string]any) map[string]any {
 	rltyData["spiderX"] = "/" + random.Seq(15)
 	shortIds, ok := rData["shortIds"].([]any)
 	if ok && len(shortIds) > 0 {
+		rltyData["shortIds"] = shortIds
 		rltyData["shortId"] = shortIds[random.Num(len(shortIds))].(string)
 	} else {
 		rltyData["shortId"] = ""

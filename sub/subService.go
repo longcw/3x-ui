@@ -373,8 +373,9 @@ func (s *SubService) genVlessLink(inbound *model.Inbound, email string) string {
 	externalProxies, _ := stream["externalProxy"].([]any)
 
 	if len(externalProxies) > 0 {
+		endpoints := s.endpointsFromExternalProxies(externalProxies)
 		return s.buildEndpointURLLinks(
-			s.endpointsFromExternalProxies(externalProxies),
+			endpoints,
 			params,
 			security,
 			func(dest string, port int) string {
@@ -383,11 +384,13 @@ func (s *SubService) genVlessLink(inbound *model.Inbound, email string) string {
 			func(endpoint subscriptionEndpoint) string {
 				return s.genRemark(inbound, email, endpoint.Remark)
 			},
+			realityEndpointParamPreparer(stream, security, len(endpoints)),
 		)
 	}
 
+	endpoints := s.endpointsForInbound(inbound)
 	return s.buildEndpointURLLinks(
-		s.endpointsForInbound(inbound),
+		endpoints,
 		params,
 		security,
 		func(dest string, port int) string {
@@ -396,6 +399,7 @@ func (s *SubService) genVlessLink(inbound *model.Inbound, email string) string {
 		func(endpoint subscriptionEndpoint) string {
 			return s.genRemark(inbound, email, endpoint.Remark)
 		},
+		realityEndpointParamPreparer(stream, security, len(endpoints)),
 	)
 }
 
@@ -431,8 +435,9 @@ func (s *SubService) genTrojanLink(inbound *model.Inbound, email string) string 
 	externalProxies, _ := stream["externalProxy"].([]any)
 
 	if len(externalProxies) > 0 {
+		endpoints := s.endpointsFromExternalProxies(externalProxies)
 		return s.buildEndpointURLLinks(
-			s.endpointsFromExternalProxies(externalProxies),
+			endpoints,
 			params,
 			security,
 			func(dest string, port int) string {
@@ -441,11 +446,13 @@ func (s *SubService) genTrojanLink(inbound *model.Inbound, email string) string 
 			func(endpoint subscriptionEndpoint) string {
 				return s.genRemark(inbound, email, endpoint.Remark)
 			},
+			realityEndpointParamPreparer(stream, security, len(endpoints)),
 		)
 	}
 
+	endpoints := s.endpointsForInbound(inbound)
 	return s.buildEndpointURLLinks(
-		s.endpointsForInbound(inbound),
+		endpoints,
 		params,
 		security,
 		func(dest string, port int) string {
@@ -454,6 +461,7 @@ func (s *SubService) genTrojanLink(inbound *model.Inbound, email string) string 
 		func(endpoint subscriptionEndpoint) string {
 			return s.genRemark(inbound, email, endpoint.Remark)
 		},
+		realityEndpointParamPreparer(stream, security, len(endpoints)),
 	)
 }
 
@@ -503,6 +511,7 @@ func (s *SubService) genShadowsocksLink(inbound *model.Inbound, email string) st
 			func(endpoint subscriptionEndpoint) string {
 				return s.genRemark(inbound, email, endpoint.Remark)
 			},
+			nil,
 		)
 	}
 
@@ -516,6 +525,7 @@ func (s *SubService) genShadowsocksLink(inbound *model.Inbound, email string) st
 		func(endpoint subscriptionEndpoint) string {
 			return s.genRemark(inbound, email, endpoint.Remark)
 		},
+		nil,
 	)
 }
 
@@ -839,6 +849,52 @@ func applyShareRealityParams(stream map[string]any, params map[string]string) {
 	}
 }
 
+func realityEndpointParamPreparer(stream map[string]any, security string, endpointCount int) func(subscriptionEndpoint, map[string]string) {
+	if security != "reality" || endpointCount <= 1 {
+		return nil
+	}
+	shortIDs := realityShortIDs(stream)
+	if len(shortIDs) <= 1 {
+		return nil
+	}
+	used := map[string]bool{}
+	return func(_ subscriptionEndpoint, params map[string]string) {
+		params["sid"] = nextUnusedShortID(shortIDs, used)
+		params["spx"] = "/" + random.Seq(15)
+	}
+}
+
+func realityShortIDs(stream map[string]any) []string {
+	realitySetting, _ := stream["realitySettings"].(map[string]any)
+	if realitySetting == nil {
+		return nil
+	}
+	value, ok := searchKey(realitySetting, "shortIds")
+	if !ok {
+		return nil
+	}
+	rawShortIDs, _ := value.([]any)
+	shortIDs := make([]string, 0, len(rawShortIDs))
+	for _, rawShortID := range rawShortIDs {
+		if shortID, ok := rawShortID.(string); ok && shortID != "" {
+			shortIDs = append(shortIDs, shortID)
+		}
+	}
+	return shortIDs
+}
+
+func nextUnusedShortID(shortIDs []string, used map[string]bool) string {
+	for _, shortID := range shortIDs {
+		if !used[shortID] {
+			used[shortID] = true
+			return shortID
+		}
+	}
+	shortID := shortIDs[random.Num(len(shortIDs))]
+	used[shortID] = true
+	return shortID
+}
+
 func buildVmessLink(obj map[string]any) string {
 	jsonStr, _ := json.MarshalIndent(obj, "", "  ")
 	return "vmess://" + base64.StdEncoding.EncodeToString(jsonStr)
@@ -897,6 +953,7 @@ func (s *SubService) buildEndpointURLLinks(
 	baseSecurity string,
 	makeLink func(dest string, port int) string,
 	makeRemark func(endpoint subscriptionEndpoint) string,
+	prepareParams func(endpoint subscriptionEndpoint, params map[string]string),
 ) string {
 	links := make([]string, 0, len(endpoints))
 	for _, endpoint := range endpoints {
@@ -905,12 +962,16 @@ func (s *SubService) buildEndpointURLLinks(
 		if newSecurity != "same" {
 			securityToApply = newSecurity
 		}
+		endpointParams := cloneStringMap(params)
+		if prepareParams != nil {
+			prepareParams(endpoint, endpointParams)
+		}
 
 		links = append(
 			links,
 			buildLinkWithParamsAndSecurity(
 				makeLink(endpoint.URIAddress, endpoint.Port),
-				params,
+				endpointParams,
 				makeRemark(endpoint),
 				securityToApply,
 				newSecurity == "none",

@@ -127,6 +127,7 @@ func (s *SubClashService) getProxies(inbound *model.Inbound, client model.Client
 	delete(stream, "externalProxy")
 
 	proxies := make([]map[string]any, 0, len(endpoints))
+	usedRealityShortIDs := map[string]bool{}
 	for _, endpoint := range endpoints {
 		workingInbound := *inbound
 		workingInbound.Listen = endpoint.Address
@@ -145,6 +146,11 @@ func (s *SubClashService) getProxies(inbound *model.Inbound, client model.Client
 				delete(workingStream, "tlsSettings")
 				delete(workingStream, "realitySettings")
 			}
+		}
+		if len(endpoints) > 1 {
+			assignUniqueRealityShortID(workingStream, usedRealityShortIDs)
+		} else {
+			stripRealityShortIDs(workingStream)
 		}
 
 		proxy := s.buildProxy(&workingInbound, client, workingStream, endpoint.Remark)
@@ -448,6 +454,7 @@ func (s *SubClashService) realityData(rData map[string]any) map[string]any {
 		rDataOut["serverName"] = fmt.Sprint(serverNames[0])
 	}
 	if shortIDs, ok := rData["shortIds"].([]any); ok && len(shortIDs) > 0 {
+		rDataOut["shortIds"] = shortIDs
 		rDataOut["shortId"] = fmt.Sprint(shortIDs[0])
 	}
 	return rDataOut
@@ -457,9 +464,43 @@ func cloneMap(src map[string]any) map[string]any {
 	if src == nil {
 		return nil
 	}
-	dst := make(map[string]any, len(src))
-	for k, v := range src {
-		dst[k] = v
+	data, err := json.Marshal(src)
+	if err != nil {
+		return nil
 	}
+	dst := map[string]any{}
+	_ = json.Unmarshal(data, &dst)
 	return dst
+}
+
+func assignUniqueRealityShortID(stream map[string]any, used map[string]bool) {
+	realitySettings, _ := stream["realitySettings"].(map[string]any)
+	if realitySettings == nil {
+		return
+	}
+	shortIDs := shortIDsFromRealitySettings(realitySettings)
+	if len(shortIDs) == 0 {
+		return
+	}
+	realitySettings["shortId"] = nextUnusedShortID(shortIDs, used)
+	delete(realitySettings, "shortIds")
+}
+
+func stripRealityShortIDs(stream map[string]any) {
+	realitySettings, _ := stream["realitySettings"].(map[string]any)
+	if realitySettings == nil {
+		return
+	}
+	delete(realitySettings, "shortIds")
+}
+
+func shortIDsFromRealitySettings(realitySettings map[string]any) []string {
+	rawShortIDs, _ := realitySettings["shortIds"].([]any)
+	shortIDs := make([]string, 0, len(rawShortIDs))
+	for _, rawShortID := range rawShortIDs {
+		if shortID, ok := rawShortID.(string); ok && shortID != "" {
+			shortIDs = append(shortIDs, shortID)
+		}
+	}
+	return shortIDs
 }

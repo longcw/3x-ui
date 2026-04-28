@@ -2,6 +2,7 @@ package sub
 
 import (
 	"encoding/base64"
+	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -90,6 +91,7 @@ func TestBuildEndpointURLLinksBracketsIPv6URIHost(t *testing.T) {
 		func(endpoint subscriptionEndpoint) string {
 			return service.genRemark(&model.Inbound{Remark: "node"}, "client@example.com", endpoint.Remark)
 		},
+		nil,
 	)
 
 	lines := strings.Split(links, "\n")
@@ -101,6 +103,48 @@ func TestBuildEndpointURLLinksBracketsIPv6URIHost(t *testing.T) {
 	}
 	if !strings.Contains(lines[1], "IPv6") {
 		t.Fatalf("expected IPv6 link remark to be unique, got %q", lines[1])
+	}
+}
+
+func TestBuildEndpointRealityURLLinksUseDifferentShortIDs(t *testing.T) {
+	service := &SubService{remarkModel: "-ieo"}
+	stream := map[string]any{
+		"realitySettings": map[string]any{
+			"shortIds": []any{"aaaa", "bbbb"},
+		},
+	}
+	endpoints := appendIPv6Endpoints([]subscriptionEndpoint{{
+		Address:    "example.com",
+		URIAddress: "example.com",
+		Port:       443,
+		Remark:     "",
+		ForceTLS:   "same",
+	}}, "2001:db8::1")
+
+	links := service.buildEndpointURLLinks(
+		endpoints,
+		map[string]string{"type": "tcp", "security": "reality", "sid": "aaaa"},
+		"reality",
+		func(dest string, port int) string {
+			return "vless://00000000-0000-0000-0000-000000000000@" + dest + ":" + strconv.Itoa(port)
+		},
+		func(endpoint subscriptionEndpoint) string {
+			return service.genRemark(&model.Inbound{Remark: "node"}, "client@example.com", endpoint.Remark)
+		},
+		realityEndpointParamPreparer(stream, "reality", len(endpoints)),
+	)
+
+	lines := strings.Split(links, "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected IPv4/domain and IPv6 links, got %d", len(lines))
+	}
+	first := queryParam(t, lines[0], "sid")
+	second := queryParam(t, lines[1], "sid")
+	if first == "" || second == "" {
+		t.Fatalf("expected both URI Reality short IDs to be present, got %q and %q", first, second)
+	}
+	if first == second {
+		t.Fatalf("expected duplicated Reality URI links to use different short IDs, got %q", first)
 	}
 }
 
@@ -141,6 +185,15 @@ func TestBuildVmessEndpointLinksKeepsBareIPv6Address(t *testing.T) {
 	}
 }
 
+func queryParam(t *testing.T, rawURL string, key string) string {
+	t.Helper()
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("parse URL %q: %v", rawURL, err)
+	}
+	return parsed.Query().Get(key)
+}
+
 func TestSubJsonConfigDuplicatesBareIPv6Address(t *testing.T) {
 	subService := subServiceWithIPv6Setting(t)
 	jsonService := NewSubJsonService("", "", "", "", subService)
@@ -166,6 +219,42 @@ func TestSubJsonConfigDuplicatesBareIPv6Address(t *testing.T) {
 	}
 	if !strings.Contains(jsonRemark(t, configs[1]), "IPv6") {
 		t.Fatalf("expected IPv6 JSON remark to be unique, got %q", jsonRemark(t, configs[1]))
+	}
+}
+
+func TestSubJsonRealityDuplicatesUseDifferentShortIDs(t *testing.T) {
+	subService := subServiceWithIPv6Setting(t)
+	jsonService := NewSubJsonService("", "", "", "", subService)
+	inbound := &model.Inbound{
+		Port:     443,
+		Protocol: model.VLESS,
+		Remark:   "node",
+		Settings: `{"encryption":"none"}`,
+		StreamSettings: `{
+			"network":"tcp",
+			"security":"reality",
+			"tcpSettings":{"header":{"type":"none"}},
+			"realitySettings":{
+				"serverNames":["example.com"],
+				"shortIds":["aaaa","bbbb"],
+				"settings":{"publicKey":"public-key","fingerprint":"chrome"}
+			}
+		}`,
+	}
+	client := model.Client{ID: "00000000-0000-0000-0000-000000000000", Email: "client@example.com"}
+
+	configs := jsonService.getConfig(inbound, client, "example.com")
+
+	if len(configs) != 2 {
+		t.Fatalf("expected JSON configs for primary and IPv6 endpoints, got %d", len(configs))
+	}
+	first := jsonRealityShortID(t, configs[0])
+	second := jsonRealityShortID(t, configs[1])
+	if first == "" || second == "" {
+		t.Fatalf("expected both Reality short IDs to be present, got %q and %q", first, second)
+	}
+	if first == second {
+		t.Fatalf("expected duplicated Reality JSON configs to use different short IDs, got %q", first)
 	}
 }
 
@@ -197,6 +286,42 @@ func TestSubClashProxiesDuplicateBareIPv6Server(t *testing.T) {
 	}
 }
 
+func TestSubClashRealityDuplicatesUseDifferentShortIDs(t *testing.T) {
+	subService := subServiceWithIPv6Setting(t)
+	clashService := NewSubClashService(subService)
+	inbound := &model.Inbound{
+		Port:     443,
+		Protocol: model.VLESS,
+		Remark:   "node",
+		Settings: `{"encryption":"none"}`,
+		StreamSettings: `{
+			"network":"tcp",
+			"security":"reality",
+			"tcpSettings":{"header":{"type":"none"}},
+			"realitySettings":{
+				"serverNames":["example.com"],
+				"shortIds":["aaaa","bbbb"],
+				"settings":{"publicKey":"public-key","fingerprint":"chrome"}
+			}
+		}`,
+	}
+	client := model.Client{ID: "00000000-0000-0000-0000-000000000000", Email: "client@example.com"}
+
+	proxies := clashService.getProxies(inbound, client, "example.com")
+
+	if len(proxies) != 2 {
+		t.Fatalf("expected Clash proxies for primary and IPv6 endpoints, got %d", len(proxies))
+	}
+	first := clashRealityShortID(t, proxies[0])
+	second := clashRealityShortID(t, proxies[1])
+	if first == "" || second == "" {
+		t.Fatalf("expected both Clash Reality short IDs to be present, got %q and %q", first, second)
+	}
+	if first == second {
+		t.Fatalf("expected duplicated Reality Clash proxies to use different short IDs, got %q", first)
+	}
+}
+
 func vlessJSONAddress(t *testing.T, raw []byte) string {
 	t.Helper()
 	var config map[string]any
@@ -209,6 +334,27 @@ func vlessJSONAddress(t *testing.T, raw []byte) string {
 	vnext := settings["vnext"].([]any)
 	server := vnext[0].(map[string]any)
 	return server["address"].(string)
+}
+
+func jsonRealityShortID(t *testing.T, raw []byte) string {
+	t.Helper()
+	var config map[string]any
+	if err := json.Unmarshal(raw, &config); err != nil {
+		t.Fatalf("unmarshal JSON config: %v", err)
+	}
+	outbounds := config["outbounds"].([]any)
+	outbound := outbounds[0].(map[string]any)
+	streamSettings := outbound["streamSettings"].(map[string]any)
+	realitySettings := streamSettings["realitySettings"].(map[string]any)
+	shortID, _ := realitySettings["shortId"].(string)
+	return shortID
+}
+
+func clashRealityShortID(t *testing.T, proxy map[string]any) string {
+	t.Helper()
+	realityOpts := proxy["reality-opts"].(map[string]any)
+	shortID, _ := realityOpts["short-id"].(string)
+	return shortID
 }
 
 func jsonRemark(t *testing.T, raw []byte) string {
