@@ -208,6 +208,17 @@ uninstall() {
     echo "If you need to install this panel again, you can use below command:"
     echo -e "${green}bash <(curl -Ls https://raw.githubusercontent.com/longcw/3x-ui/master/install.sh)${plain}"
     echo ""
+
+    # acme.sh, its renewal cron, and issued certs are intentionally left in place
+    # so a reinstall can reuse them. Hint the user if they want a full cleanup.
+    if [[ -x "$HOME/.acme.sh/acme.sh" ]] || [[ -d /root/cert ]]; then
+        echo -e "${yellow}Note: acme.sh and issued certificates were left in place${plain}"
+        echo -e "${yellow}so a reinstall can reuse them (no Let's Encrypt rate-limit hit).${plain}"
+        echo -e "${yellow}If you want to remove them too:${plain}"
+        echo -e "  ${green}~/.acme.sh/acme.sh --uninstall${plain}   # removes the renewal cron"
+        echo -e "  ${green}rm -rf ~/.acme.sh /root/cert${plain}      # removes acme.sh state and cert files"
+        echo ""
+    fi
     # Trap the SIGTERM signal
     trap delete_script SIGTERM
     delete_script
