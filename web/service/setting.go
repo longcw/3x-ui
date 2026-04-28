@@ -69,6 +69,7 @@ var defaultValueMap = map[string]string{
 	"subEncrypt":                  "true",
 	"subShowInfo":                 "true",
 	"subURI":                      "",
+	"subIPv6Address":              "",
 	"subJsonPath":                 "/json/",
 	"subJsonURI":                  "",
 	"subClashEnable":              "true",
@@ -560,6 +561,10 @@ func (s *SettingService) GetSubURI() (string, error) {
 	return s.getString("subURI")
 }
 
+func (s *SettingService) GetSubIPv6Address() (string, error) {
+	return s.getString("subIPv6Address")
+}
+
 func (s *SettingService) GetSubJsonURI() (string, error) {
 	return s.getString("subJsonURI")
 }
@@ -769,6 +774,61 @@ func extractHostname(host string) string {
 	return "[" + h + "]"
 }
 
+var detectPublicIPv6Address = func() string {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return ""
+	}
+
+	for _, iface := range interfaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		if address := selectPublicIPv6Address(addrs); address != "" {
+			return address
+		}
+	}
+	return ""
+}
+
+func selectPublicIPv6Address(addrs []net.Addr) string {
+	for _, addr := range addrs {
+		ip := ipFromAddr(addr)
+		if isPublicIPv6(ip) {
+			return ip.String()
+		}
+	}
+	return ""
+}
+
+func ipFromAddr(addr net.Addr) net.IP {
+	switch v := addr.(type) {
+	case *net.IPNet:
+		return v.IP
+	case *net.IPAddr:
+		return v.IP
+	default:
+		host, _, err := net.SplitHostPort(addr.String())
+		if err == nil {
+			return net.ParseIP(host)
+		}
+		return net.ParseIP(addr.String())
+	}
+}
+
+func isPublicIPv6(ip net.IP) bool {
+	if ip == nil || ip.To4() != nil || !ip.IsGlobalUnicast() {
+		return false
+	}
+	// Exclude Unique Local Addresses (fc00::/7). They are globally scoped
+	// syntactically, but are not publicly routable subscription endpoints.
+	return !(len(ip) == net.IPv6len && ip[0]&0xfe == 0xfc)
+}
+
 func (s *SettingService) GetDefaultSettings(host string) (any, error) {
 	type settingFunc func() (any, error)
 	settings := map[string]settingFunc{
@@ -783,6 +843,7 @@ func (s *SettingService) GetDefaultSettings(host string) (any, error) {
 		"subClashEnable": func() (any, error) { return s.GetSubClashEnable() },
 		"subTitle":       func() (any, error) { return s.GetSubTitle() },
 		"subURI":         func() (any, error) { return s.GetSubURI() },
+		"subIPv6Address": func() (any, error) { return s.GetSubIPv6Address() },
 		"subJsonURI":     func() (any, error) { return s.GetSubJsonURI() },
 		"subClashURI":    func() (any, error) { return s.GetSubClashURI() },
 		"remarkModel":    func() (any, error) { return s.GetRemarkModel() },
@@ -798,6 +859,10 @@ func (s *SettingService) GetDefaultSettings(host string) (any, error) {
 			return "", err
 		}
 		result[key] = value
+	}
+
+	if result["subIPv6Address"].(string) == "" {
+		result["subIPv6Address"] = detectPublicIPv6Address()
 	}
 
 	subEnable := result["subEnable"].(bool)

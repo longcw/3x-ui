@@ -462,6 +462,8 @@
 "subShowInfoDesc" = "ترافیک و زمان باقی‌مانده را در برنامه‌های کاربری نمایش می‌دهد"
 "subURI" = "پروکسی معکوس URI مسیر"
 "subURIDesc" = "سابسکریپشن را برای استفاده در پشت پراکسی‌ها تغییر می‌دهد URI مسیر"
+"subIPv6Address" = "IPv6 Subscription Address"
+"subIPv6AddressDesc" = "Optional IPv6 address used to add duplicate IPv6 links to subscriptions."
 "externalTrafficInformEnable" = "اطلاع رسانی خارجی مصرف ترافیک"
 "externalTrafficInformEnableDesc" = "مصرف ترافیک به سرویس خارجی ارسال می شود"
 "externalTrafficInformURI" = "لینک اطلاع رسانی خارجی مصرف ترافیک"

@@ -462,6 +462,8 @@
 "subShowInfoDesc" = "クライアントアプリで残りのトラフィックと日付情報を表示する"
 "subURI" = "リバースプロキシURI"
 "subURIDesc" = "プロキシ後ろのサブスクリプションURLのURIパスに使用する"
+"subIPv6Address" = "IPv6 Subscription Address"
+"subIPv6AddressDesc" = "Optional IPv6 address used to add duplicate IPv6 links to subscriptions."
 "externalTrafficInformEnable" = "外部トラフィック情報"
 "externalTrafficInformEnableDesc" = "トラフィックの更新ごとに外部 API に通知します。"
 "externalTrafficInformURI" = "外部トラフィック通知 URI"

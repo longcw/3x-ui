@@ -462,6 +462,8 @@
 "subShowInfoDesc" = "Отображать остаток трафика и дату окончания после имени конфигурации"
 "subURI" = "URI обратного прокси"
 "subURIDesc" = "Изменить базовый URI URL-адреса подписки для использования за прокси-серверами"
+"subIPv6Address" = "IPv6 Subscription Address"
+"subIPv6AddressDesc" = "Optional IPv6 address used to add duplicate IPv6 links to subscriptions."
 "externalTrafficInformEnable" = "Информация о внешнем трафике"
 "externalTrafficInformEnableDesc" = "Информировать внешний API о каждом обновлении трафика"
 "externalTrafficInformURI" = "URI информации о внешнем трафике"

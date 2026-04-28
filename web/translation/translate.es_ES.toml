@@ -466,6 +466,8 @@
 "externalTrafficInformURI" = "URI de información de tráfico externo"
 "externalTrafficInformURIDesc" = "Las actualizaciones de tráfico se envían a este URI."
 "subURIDesc" = "Cambiar el URI base de la URL de suscripción para usar detrás de los servidores proxy"
+"subIPv6Address" = "IPv6 Subscription Address"
+"subIPv6AddressDesc" = "Optional IPv6 address used to add duplicate IPv6 links to subscriptions."
 "fragment" = "Fragmentación"
 "fragmentDesc" = "Habilitar la fragmentación para el paquete de saludo de TLS"
 "fragmentSett" = "Configuración de Fragmentación"

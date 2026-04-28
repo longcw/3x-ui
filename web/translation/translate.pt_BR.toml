@@ -462,6 +462,8 @@
 "subShowInfoDesc" = "O tráfego restante e a data serão exibidos nos aplicativos de cliente."
 "subURI" = "URI de Proxy Reverso"
 "subURIDesc" = "O caminho URI da URL de assinatura para uso por trás de proxies."
+"subIPv6Address" = "IPv6 Subscription Address"
+"subIPv6AddressDesc" = "Optional IPv6 address used to add duplicate IPv6 links to subscriptions."
 "externalTrafficInformEnable" = "Informações de tráfego externo"
 "externalTrafficInformEnableDesc" = "Informar a API externa sobre cada atualização de tráfego."
 "externalTrafficInformURI" = "URI de informação de tráfego externo"

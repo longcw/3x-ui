@@ -72,6 +72,15 @@
                     v-model="allSetting.subURI"></a-input>
             </template>
         </a-setting-list-item>
+        <a-setting-list-item paddings="small">
+            <template #title>{{ i18n "pages.settings.subIPv6Address"}}</template>
+            <template #description>{{ i18n
+                "pages.settings.subIPv6AddressDesc"}}</template>
+            <template #control>
+                <a-input type="text" placeholder="2001:db8::1"
+                    v-model="allSetting.subIPv6Address"></a-input>
+            </template>
+        </a-setting-list-item>
     </a-collapse-panel>
     <a-collapse-panel key="2" header='{{ i18n "pages.settings.information" }}'>
         <a-setting-list-item paddings="small">

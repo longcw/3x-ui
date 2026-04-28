@@ -462,6 +462,8 @@
 "subShowInfoDesc" = "Залишок трафіку та дата відображатимуться в клієнтських програмах."
 "subURI" = "URI зворотного проксі"
 "subURIDesc" = "URI до URL-адреси підписки для використання за проксі."
+"subIPv6Address" = "IPv6 Subscription Address"
+"subIPv6AddressDesc" = "Optional IPv6 address used to add duplicate IPv6 links to subscriptions."
 "externalTrafficInformEnable" = "Інформація про зовнішній трафік"
 "externalTrafficInformEnableDesc" = "Інформувати зовнішній API про кожне оновлення трафіку."
 "externalTrafficInformURI" = "Інформаційний URI зовнішнього трафіку"

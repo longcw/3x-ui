@@ -462,6 +462,8 @@
 "subShowInfoDesc" = "Kalan trafik ve tarih müşteri uygulamalarında görüntülenir."
 "subURI" = "Ters Proxy URI"
 "subURIDesc" = "Proxy arkasında kullanılacak abonelik URL'sinin URI yolu."
+"subIPv6Address" = "IPv6 Subscription Address"
+"subIPv6AddressDesc" = "Optional IPv6 address used to add duplicate IPv6 links to subscriptions."
 "externalTrafficInformEnable" = "Harici Trafik Bilgisi"
 "externalTrafficInformEnableDesc" = "Her trafik güncellemesinde harici API'yi bilgilendirin."
 "externalTrafficInformURI" = "Harici Trafik Bilgisi URI'si"

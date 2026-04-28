@@ -168,25 +168,21 @@ func (s *SubJsonService) getConfig(inbound *model.Inbound, client model.Client, 
 	stream := s.streamData(inbound.StreamSettings)
 
 	externalProxies, ok := stream["externalProxy"].([]any)
+	var endpoints []subscriptionEndpoint
 	if !ok || len(externalProxies) == 0 {
-		externalProxies = []any{
-			map[string]any{
-				"forceTls": "same",
-				"dest":     host,
-				"port":     float64(inbound.Port),
-				"remark":   "",
-			},
-		}
+		endpoints = s.SubService.endpointsForHost(host, inbound.Port)
+	} else {
+		endpoints = s.SubService.endpointsFromExternalProxies(externalProxies)
 	}
 
 	delete(stream, "externalProxy")
 
-	for _, ep := range externalProxies {
-		extPrxy := ep.(map[string]any)
-		inbound.Listen = extPrxy["dest"].(string)
-		inbound.Port = int(extPrxy["port"].(float64))
-		newStream := stream
-		switch extPrxy["forceTls"].(string) {
+	for _, endpoint := range endpoints {
+		workingInbound := *inbound
+		workingInbound.Listen = endpoint.Address
+		workingInbound.Port = endpoint.Port
+		newStream := cloneMap(stream)
+		switch endpoint.ForceTLS {
 		case "tls":
 			if newStream["security"] != "tls" {
 				newStream["security"] = "tls"
@@ -202,15 +198,15 @@ func (s *SubJsonService) getConfig(inbound *model.Inbound, client model.Client, 
 
 		var newOutbounds []json_util.RawMessage
 
-		switch inbound.Protocol {
+		switch workingInbound.Protocol {
 		case "vmess":
-			newOutbounds = append(newOutbounds, s.genVnext(inbound, streamSettings, client))
+			newOutbounds = append(newOutbounds, s.genVnext(&workingInbound, streamSettings, client))
 		case "vless":
-			newOutbounds = append(newOutbounds, s.genVless(inbound, streamSettings, client))
+			newOutbounds = append(newOutbounds, s.genVless(&workingInbound, streamSettings, client))
 		case "trojan", "shadowsocks":
-			newOutbounds = append(newOutbounds, s.genServer(inbound, streamSettings, client))
+			newOutbounds = append(newOutbounds, s.genServer(&workingInbound, streamSettings, client))
 		case "hysteria", "hysteria2":
-			newOutbounds = append(newOutbounds, s.genHy(inbound, newStream, client))
+			newOutbounds = append(newOutbounds, s.genHy(&workingInbound, newStream, client))
 		}
 
 		newOutbounds = append(newOutbounds, s.defaultOutbounds...)
@@ -218,7 +214,7 @@ func (s *SubJsonService) getConfig(inbound *model.Inbound, client model.Client, 
 		maps.Copy(newConfigJson, s.configJson)
 
 		newConfigJson["outbounds"] = newOutbounds
-		newConfigJson["remarks"] = s.SubService.genRemark(inbound, client.Email, extPrxy["remark"].(string))
+		newConfigJson["remarks"] = s.SubService.genRemark(&workingInbound, client.Email, endpoint.Remark)
 
 		newConfig, _ := json.MarshalIndent(newConfigJson, "", "  ")
 		newJsonArray = append(newJsonArray, newConfig)

@@ -32,6 +32,14 @@ type SubService struct {
 	settingService service.SettingService
 }
 
+type subscriptionEndpoint struct {
+	Address    string
+	URIAddress string
+	Port       int
+	Remark     string
+	ForceTLS   string
+}
+
 // NewSubService creates a new subscription service with the given configuration.
 func NewSubService(showInfo bool, remarkModel string) *SubService {
 	return &SubService{
@@ -181,16 +189,119 @@ func (s *SubService) getLink(inbound *model.Inbound, email string) string {
 	return ""
 }
 
+func newSubscriptionEndpoint(address string, port int, remark string, forceTLS string) subscriptionEndpoint {
+	return subscriptionEndpoint{
+		Address:    normalizeIPAddress(address),
+		URIAddress: formatAddressForURI(address),
+		Port:       port,
+		Remark:     remark,
+		ForceTLS:   forceTLS,
+	}
+}
+
+func normalizeIPAddress(address string) string {
+	address = strings.TrimSpace(address)
+	if strings.HasPrefix(address, "[") && strings.HasSuffix(address, "]") {
+		return strings.TrimPrefix(strings.TrimSuffix(address, "]"), "[")
+	}
+	return address
+}
+
+func formatAddressForURI(address string) string {
+	normalized := normalizeIPAddress(address)
+	ip := net.ParseIP(normalized)
+	if ip != nil && ip.To4() == nil {
+		return "[" + normalized + "]"
+	}
+	return normalized
+}
+
+func appendIPv6Endpoints(endpoints []subscriptionEndpoint, ipv6Address string) []subscriptionEndpoint {
+	ipv6Address = normalizeIPAddress(ipv6Address)
+	ip := net.ParseIP(ipv6Address)
+	if ip == nil || ip.To4() != nil {
+		return endpoints
+	}
+
+	for _, endpoint := range endpoints {
+		if normalizeIPAddress(endpoint.Address) == ipv6Address {
+			return endpoints
+		}
+	}
+
+	result := slices.Clone(endpoints)
+	for _, endpoint := range endpoints {
+		ipv6Endpoint := endpoint
+		ipv6Endpoint.Address = ipv6Address
+		ipv6Endpoint.URIAddress = formatAddressForURI(ipv6Address)
+		ipv6Endpoint.Remark = appendIPv6Remark(endpoint.Remark)
+		result = append(result, ipv6Endpoint)
+	}
+	return result
+}
+
+func appendIPv6Remark(remark string) string {
+	if remark == "" {
+		return "IPv6"
+	}
+	if strings.Contains(remark, "IPv6") {
+		return remark
+	}
+	return remark + " IPv6"
+}
+
+func (s *SubService) appendConfiguredIPv6Endpoints(endpoints []subscriptionEndpoint) []subscriptionEndpoint {
+	ipv6Address, err := s.settingService.GetSubIPv6Address()
+	if err != nil {
+		return endpoints
+	}
+	return appendIPv6Endpoints(endpoints, ipv6Address)
+}
+
+func (s *SubService) endpointsForInbound(inbound *model.Inbound) []subscriptionEndpoint {
+	endpoints := []subscriptionEndpoint{
+		newSubscriptionEndpoint(s.resolveInboundAddress(inbound), inbound.Port, "", "same"),
+	}
+	return s.appendConfiguredIPv6Endpoints(endpoints)
+}
+
+func (s *SubService) endpointsForHost(host string, port int) []subscriptionEndpoint {
+	endpoints := []subscriptionEndpoint{
+		newSubscriptionEndpoint(host, port, "", "same"),
+	}
+	return s.appendConfiguredIPv6Endpoints(endpoints)
+}
+
+func (s *SubService) endpointsFromExternalProxies(externalProxies []any) []subscriptionEndpoint {
+	endpoints := make([]subscriptionEndpoint, 0, len(externalProxies))
+	for _, externalProxy := range externalProxies {
+		ep, ok := externalProxy.(map[string]any)
+		if !ok {
+			continue
+		}
+		dest, _ := ep["dest"].(string)
+		portF, okPort := ep["port"].(float64)
+		if dest == "" || !okPort {
+			continue
+		}
+		remark, _ := ep["remark"].(string)
+		forceTLS, _ := ep["forceTls"].(string)
+		if forceTLS == "" {
+			forceTLS = "same"
+		}
+		endpoints = append(endpoints, newSubscriptionEndpoint(dest, int(portF), remark, forceTLS))
+	}
+	return s.appendConfiguredIPv6Endpoints(endpoints)
+}
+
 // Protocol link generators are intentionally ordered as:
 // vmess -> vless -> trojan -> shadowsocks -> hysteria.
 func (s *SubService) genVmessLink(inbound *model.Inbound, email string) string {
 	if inbound.Protocol != model.VMESS {
 		return ""
 	}
-	address := s.resolveInboundAddress(inbound)
 	obj := map[string]any{
 		"v":    "2",
-		"add":  address,
 		"port": inbound.Port,
 		"type": "none",
 	}
@@ -214,23 +325,20 @@ func (s *SubService) genVmessLink(inbound *model.Inbound, email string) string {
 	externalProxies, _ := stream["externalProxy"].([]any)
 
 	if len(externalProxies) > 0 {
-		return s.buildVmessExternalProxyLinks(externalProxies, obj, inbound, email)
+		return s.buildVmessEndpointLinks(s.endpointsFromExternalProxies(externalProxies), obj, inbound, email)
 	}
 
-	obj["ps"] = s.genRemark(inbound, email, "")
-	return buildVmessLink(obj)
+	return s.buildVmessEndpointLinks(s.endpointsForInbound(inbound), obj, inbound, email)
 }
 
 func (s *SubService) genVlessLink(inbound *model.Inbound, email string) string {
 	if inbound.Protocol != model.VLESS {
 		return ""
 	}
-	address := s.resolveInboundAddress(inbound)
 	stream := unmarshalStreamSettings(inbound.StreamSettings)
 	clients, _ := s.inboundService.GetClients(inbound)
 	clientIndex := findClientIndex(clients, email)
 	uuid := clients[clientIndex].ID
-	port := inbound.Port
 	streamNetwork := stream["network"].(string)
 	params := make(map[string]string)
 	params["type"] = streamNetwork
@@ -265,33 +373,40 @@ func (s *SubService) genVlessLink(inbound *model.Inbound, email string) string {
 	externalProxies, _ := stream["externalProxy"].([]any)
 
 	if len(externalProxies) > 0 {
-		return s.buildExternalProxyURLLinks(
-			externalProxies,
+		return s.buildEndpointURLLinks(
+			s.endpointsFromExternalProxies(externalProxies),
 			params,
 			security,
 			func(dest string, port int) string {
 				return fmt.Sprintf("vless://%s@%s:%d", uuid, dest, port)
 			},
-			func(ep map[string]any) string {
-				return s.genRemark(inbound, email, ep["remark"].(string))
+			func(endpoint subscriptionEndpoint) string {
+				return s.genRemark(inbound, email, endpoint.Remark)
 			},
 		)
 	}
 
-	link := fmt.Sprintf("vless://%s@%s:%d", uuid, address, port)
-	return buildLinkWithParams(link, params, s.genRemark(inbound, email, ""))
+	return s.buildEndpointURLLinks(
+		s.endpointsForInbound(inbound),
+		params,
+		security,
+		func(dest string, port int) string {
+			return fmt.Sprintf("vless://%s@%s:%d", uuid, dest, port)
+		},
+		func(endpoint subscriptionEndpoint) string {
+			return s.genRemark(inbound, email, endpoint.Remark)
+		},
+	)
 }
 
 func (s *SubService) genTrojanLink(inbound *model.Inbound, email string) string {
 	if inbound.Protocol != model.Trojan {
 		return ""
 	}
-	address := s.resolveInboundAddress(inbound)
 	stream := unmarshalStreamSettings(inbound.StreamSettings)
 	clients, _ := s.inboundService.GetClients(inbound)
 	clientIndex := findClientIndex(clients, email)
 	password := clients[clientIndex].Password
-	port := inbound.Port
 	streamNetwork := stream["network"].(string)
 	params := make(map[string]string)
 	params["type"] = streamNetwork
@@ -316,28 +431,36 @@ func (s *SubService) genTrojanLink(inbound *model.Inbound, email string) string 
 	externalProxies, _ := stream["externalProxy"].([]any)
 
 	if len(externalProxies) > 0 {
-		return s.buildExternalProxyURLLinks(
-			externalProxies,
+		return s.buildEndpointURLLinks(
+			s.endpointsFromExternalProxies(externalProxies),
 			params,
 			security,
 			func(dest string, port int) string {
 				return fmt.Sprintf("trojan://%s@%s:%d", password, dest, port)
 			},
-			func(ep map[string]any) string {
-				return s.genRemark(inbound, email, ep["remark"].(string))
+			func(endpoint subscriptionEndpoint) string {
+				return s.genRemark(inbound, email, endpoint.Remark)
 			},
 		)
 	}
 
-	link := fmt.Sprintf("trojan://%s@%s:%d", password, address, port)
-	return buildLinkWithParams(link, params, s.genRemark(inbound, email, ""))
+	return s.buildEndpointURLLinks(
+		s.endpointsForInbound(inbound),
+		params,
+		security,
+		func(dest string, port int) string {
+			return fmt.Sprintf("trojan://%s@%s:%d", password, dest, port)
+		},
+		func(endpoint subscriptionEndpoint) string {
+			return s.genRemark(inbound, email, endpoint.Remark)
+		},
+	)
 }
 
 func (s *SubService) genShadowsocksLink(inbound *model.Inbound, email string) string {
 	if inbound.Protocol != model.Shadowsocks {
 		return ""
 	}
-	address := s.resolveInboundAddress(inbound)
 	stream := unmarshalStreamSettings(inbound.StreamSettings)
 	clients, _ := s.inboundService.GetClients(inbound)
 
@@ -370,21 +493,30 @@ func (s *SubService) genShadowsocksLink(inbound *model.Inbound, email string) st
 	if len(externalProxies) > 0 {
 		proxyParams := cloneStringMap(params)
 		proxyParams["security"] = security
-		return s.buildExternalProxyURLLinks(
-			externalProxies,
+		return s.buildEndpointURLLinks(
+			s.endpointsFromExternalProxies(externalProxies),
 			proxyParams,
 			security,
 			func(dest string, port int) string {
 				return fmt.Sprintf("ss://%s@%s:%d", base64.StdEncoding.EncodeToString([]byte(encPart)), dest, port)
 			},
-			func(ep map[string]any) string {
-				return s.genRemark(inbound, email, ep["remark"].(string))
+			func(endpoint subscriptionEndpoint) string {
+				return s.genRemark(inbound, email, endpoint.Remark)
 			},
 		)
 	}
 
-	link := fmt.Sprintf("ss://%s@%s:%d", base64.StdEncoding.EncodeToString([]byte(encPart)), address, inbound.Port)
-	return buildLinkWithParams(link, params, s.genRemark(inbound, email, ""))
+	return s.buildEndpointURLLinks(
+		s.endpointsForInbound(inbound),
+		params,
+		security,
+		func(dest string, port int) string {
+			return fmt.Sprintf("ss://%s@%s:%d", base64.StdEncoding.EncodeToString([]byte(encPart)), dest, port)
+		},
+		func(endpoint subscriptionEndpoint) string {
+			return s.genRemark(inbound, email, endpoint.Remark)
+		},
+	)
 }
 
 func (s *SubService) genHysteriaLink(inbound *model.Inbound, email string) string {
@@ -467,41 +599,34 @@ func (s *SubService) genHysteriaLink(inbound *model.Inbound, email string) strin
 	externalProxies, _ := stream["externalProxy"].([]any)
 	if len(externalProxies) > 0 {
 		links := make([]string, 0, len(externalProxies))
-		for _, externalProxy := range externalProxies {
-			ep, ok := externalProxy.(map[string]any)
-			if !ok {
-				continue
-			}
-			dest, _ := ep["dest"].(string)
-			portF, okPort := ep["port"].(float64)
-			if dest == "" || !okPort {
-				continue
-			}
-			epRemark, _ := ep["remark"].(string)
-
-			link := fmt.Sprintf("%s://%s@%s:%d", protocol, auth, dest, int(portF))
+		for _, endpoint := range s.endpointsFromExternalProxies(externalProxies) {
+			link := fmt.Sprintf("%s://%s@%s:%d", protocol, auth, endpoint.URIAddress, endpoint.Port)
 			u, _ := url.Parse(link)
 			q := u.Query()
 			for k, v := range params {
 				q.Add(k, v)
 			}
 			u.RawQuery = q.Encode()
-			u.Fragment = s.genRemark(inbound, email, epRemark)
+			u.Fragment = s.genRemark(inbound, email, endpoint.Remark)
 			links = append(links, u.String())
 		}
 		return strings.Join(links, "\n")
 	}
 
 	// No external proxy configured — fall back to the request host.
-	link := fmt.Sprintf("%s://%s@%s:%d", protocol, auth, s.address, inbound.Port)
-	url, _ := url.Parse(link)
-	q := url.Query()
-	for k, v := range params {
-		q.Add(k, v)
+	links := make([]string, 0, 2)
+	for _, endpoint := range s.endpointsForHost(s.address, inbound.Port) {
+		link := fmt.Sprintf("%s://%s@%s:%d", protocol, auth, endpoint.URIAddress, endpoint.Port)
+		url, _ := url.Parse(link)
+		q := url.Query()
+		for k, v := range params {
+			q.Add(k, v)
+		}
+		url.RawQuery = q.Encode()
+		url.Fragment = s.genRemark(inbound, email, endpoint.Remark)
+		links = append(links, url.String())
 	}
-	url.RawQuery = q.Encode()
-	url.Fragment = s.genRemark(inbound, email, "")
-	return url.String()
+	return strings.Join(links, "\n")
 }
 
 func (s *SubService) resolveInboundAddress(inbound *model.Inbound) string {
@@ -729,15 +854,14 @@ func cloneVmessShareObj(baseObj map[string]any, newSecurity string) map[string]a
 	return newObj
 }
 
-func (s *SubService) buildVmessExternalProxyLinks(externalProxies []any, baseObj map[string]any, inbound *model.Inbound, email string) string {
+func (s *SubService) buildVmessEndpointLinks(endpoints []subscriptionEndpoint, baseObj map[string]any, inbound *model.Inbound, email string) string {
 	var links strings.Builder
-	for index, externalProxy := range externalProxies {
-		ep, _ := externalProxy.(map[string]any)
-		newSecurity, _ := ep["forceTls"].(string)
+	for index, endpoint := range endpoints {
+		newSecurity := endpoint.ForceTLS
 		newObj := cloneVmessShareObj(baseObj, newSecurity)
-		newObj["ps"] = s.genRemark(inbound, email, ep["remark"].(string))
-		newObj["add"] = ep["dest"].(string)
-		newObj["port"] = int(ep["port"].(float64))
+		newObj["ps"] = s.genRemark(inbound, email, endpoint.Remark)
+		newObj["add"] = endpoint.Address
+		newObj["port"] = endpoint.Port
 
 		if newSecurity != "same" {
 			newObj["tls"] = newSecurity
@@ -778,20 +902,16 @@ func buildLinkWithParamsAndSecurity(link string, params map[string]string, fragm
 	return parsedURL.String()
 }
 
-func (s *SubService) buildExternalProxyURLLinks(
-	externalProxies []any,
+func (s *SubService) buildEndpointURLLinks(
+	endpoints []subscriptionEndpoint,
 	params map[string]string,
 	baseSecurity string,
 	makeLink func(dest string, port int) string,
-	makeRemark func(ep map[string]any) string,
+	makeRemark func(endpoint subscriptionEndpoint) string,
 ) string {
-	links := make([]string, 0, len(externalProxies))
-	for _, externalProxy := range externalProxies {
-		ep, _ := externalProxy.(map[string]any)
-		newSecurity, _ := ep["forceTls"].(string)
-		dest, _ := ep["dest"].(string)
-		port := int(ep["port"].(float64))
-
+	links := make([]string, 0, len(endpoints))
+	for _, endpoint := range endpoints {
+		newSecurity := endpoint.ForceTLS
 		securityToApply := baseSecurity
 		if newSecurity != "same" {
 			securityToApply = newSecurity
@@ -800,9 +920,9 @@ func (s *SubService) buildExternalProxyURLLinks(
 		links = append(
 			links,
 			buildLinkWithParamsAndSecurity(
-				makeLink(dest, port),
+				makeLink(endpoint.URIAddress, endpoint.Port),
 				params,
-				makeRemark(ep),
+				makeRemark(endpoint),
 				securityToApply,
 				newSecurity == "none",
 			),

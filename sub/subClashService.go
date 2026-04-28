@@ -118,25 +118,22 @@ func (s *SubClashService) GetClash(subId string, host string) (string, string, e
 func (s *SubClashService) getProxies(inbound *model.Inbound, client model.Client, host string) []map[string]any {
 	stream := s.streamData(inbound.StreamSettings)
 	externalProxies, ok := stream["externalProxy"].([]any)
+	var endpoints []subscriptionEndpoint
 	if !ok || len(externalProxies) == 0 {
-		externalProxies = []any{map[string]any{
-			"forceTls": "same",
-			"dest":     host,
-			"port":     float64(inbound.Port),
-			"remark":   "",
-		}}
+		endpoints = s.SubService.endpointsForHost(host, inbound.Port)
+	} else {
+		endpoints = s.SubService.endpointsFromExternalProxies(externalProxies)
 	}
 	delete(stream, "externalProxy")
 
-	proxies := make([]map[string]any, 0, len(externalProxies))
-	for _, ep := range externalProxies {
-		extPrxy := ep.(map[string]any)
+	proxies := make([]map[string]any, 0, len(endpoints))
+	for _, endpoint := range endpoints {
 		workingInbound := *inbound
-		workingInbound.Listen = extPrxy["dest"].(string)
-		workingInbound.Port = int(extPrxy["port"].(float64))
+		workingInbound.Listen = endpoint.Address
+		workingInbound.Port = endpoint.Port
 		workingStream := cloneMap(stream)
 
-		switch extPrxy["forceTls"].(string) {
+		switch endpoint.ForceTLS {
 		case "tls":
 			if workingStream["security"] != "tls" {
 				workingStream["security"] = "tls"
@@ -150,7 +147,7 @@ func (s *SubClashService) getProxies(inbound *model.Inbound, client model.Client
 			}
 		}
 
-		proxy := s.buildProxy(&workingInbound, client, workingStream, extPrxy["remark"].(string))
+		proxy := s.buildProxy(&workingInbound, client, workingStream, endpoint.Remark)
 		if len(proxy) > 0 {
 			proxies = append(proxies, proxy)
 		}

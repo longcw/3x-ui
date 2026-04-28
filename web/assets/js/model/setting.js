@@ -49,6 +49,7 @@ class AllSetting {
         this.subEncrypt = true;
         this.subShowInfo = true;
         this.subURI = "";
+        this.subIPv6Address = "";
         this.subJsonURI = "";
         this.subClashURI = "";
         this.subJsonFragment = "";

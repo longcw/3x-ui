@@ -462,6 +462,8 @@
 "subShowInfoDesc" = "Hiển thị lưu lượng truy cập còn lại và ngày sau tên cấu hình"
 "subURI" = "URI proxy trung gian"
 "subURIDesc" = "Thay đổi URI cơ sở của URL gói đăng ký để sử dụng cho proxy trung gian"
+"subIPv6Address" = "IPv6 Subscription Address"
+"subIPv6AddressDesc" = "Optional IPv6 address used to add duplicate IPv6 links to subscriptions."
 "externalTrafficInformEnable" = "Thông báo giao thông bên ngoài"
 "externalTrafficInformEnableDesc" = "Thông báo cho API bên ngoài về mọi cập nhật lưu lượng truy cập."
 "externalTrafficInformURI" = "URI thông báo lưu lượng truy cập bên ngoài"

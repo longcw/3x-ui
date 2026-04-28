@@ -462,6 +462,8 @@
 "subShowInfoDesc" = "هيظهر الترافيك المتبقي والتاريخ في تطبيقات العملاء."
 "subURI" = "مسار البروكسي العكسي"
 "subURIDesc" = "مسار URI لرابط الاشتراك عشان تستخدمه ورا البروكسي."
+"subIPv6Address" = "IPv6 Subscription Address"
+"subIPv6AddressDesc" = "Optional IPv6 address used to add duplicate IPv6 links to subscriptions."
 "externalTrafficInformEnable" = "تنبيه الترافيك الخارجي"
 "externalTrafficInformEnableDesc" = "يبعت تنبيه لـ API خارجي مع كل تحديث للترافيك."
 "externalTrafficInformURI" = "مسار تنبيه الترافيك الخارجي"

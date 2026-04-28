@@ -74,6 +74,7 @@ type AllSetting struct {
 	SubEncrypt                  bool   `json:"subEncrypt" form:"subEncrypt"`                                   // Encrypt subscription responses
 	SubShowInfo                 bool   `json:"subShowInfo" form:"subShowInfo"`                                 // Show client information in subscriptions
 	SubURI                      string `json:"subURI" form:"subURI"`                                           // Subscription server URI
+	SubIPv6Address              string `json:"subIPv6Address" form:"subIPv6Address"`                           // Optional IPv6 address for duplicate subscription links
 	SubJsonPath                 string `json:"subJsonPath" form:"subJsonPath"`                                 // Path for JSON subscription endpoint
 	SubJsonURI                  string `json:"subJsonURI" form:"subJsonURI"`                                   // JSON subscription server URI
 	SubClashEnable              bool   `json:"subClashEnable" form:"subClashEnable"`                           // Enable Clash/Mihomo subscription endpoint
@@ -123,6 +124,17 @@ func (s *AllSetting) CheckValid() error {
 		if ip == nil {
 			return common.NewError("Sub listen is not valid ip:", s.SubListen)
 		}
+	}
+	if s.SubIPv6Address != "" {
+		subIPv6Address := strings.TrimSpace(s.SubIPv6Address)
+		if strings.HasPrefix(subIPv6Address, "[") && strings.HasSuffix(subIPv6Address, "]") {
+			subIPv6Address = strings.TrimPrefix(strings.TrimSuffix(subIPv6Address, "]"), "[")
+		}
+		ip := net.ParseIP(subIPv6Address)
+		if ip == nil || ip.To4() != nil {
+			return common.NewError("Sub IPv6 address is not a valid IPv6 address:", s.SubIPv6Address)
+		}
+		s.SubIPv6Address = subIPv6Address
 	}
 
 	if s.WebPort <= 0 || s.WebPort > math.MaxUint16 {
